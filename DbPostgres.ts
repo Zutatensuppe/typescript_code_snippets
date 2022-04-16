@@ -1,3 +1,4 @@
+import { Mutex } from 'async-mutex'
 import fs from 'fs'
 import * as pg from 'pg'
 // @ts-ignore
@@ -7,6 +8,8 @@ const { Client } = pg.default
 // logger('Db.ts')
 
 const log = console
+
+const mutex = new Mutex();
 
 /**
  * TODO: create a more specific type for OrderBy.
@@ -242,15 +245,16 @@ class Db {
     check: WhereRaw,
     idcol: string | null = null
   ): Promise<any> {
-    if (!await this.exists(table, check)) {
-      return await this.insert(table, data, idcol)
-    }
-    await this.update(table, data, check)
-    if (idcol === null) {
-      return 0 // dont care about id
-    }
-
-    return (await this.get(table, check))[idcol] // get id manually
+    return mutex.runExclusive(async () => {
+      if (!await this.exists(table, check)) {
+        return await this.insert(table, data, idcol)
+      }
+      await this.update(table, data, check)
+      if (idcol === null) {
+        return 0 // dont care about id
+      }
+      return (await this.get(table, check))[idcol] // get id manually
+    })
   }
 
   async insert(table: string, data: Data, idcol: string | null = null): Promise<number | bigint> {
